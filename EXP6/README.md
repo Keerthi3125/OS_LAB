@@ -1,46 +1,150 @@
 #include <stdio.h>
-#include <pthread.h>
-#include <stdbool.h>
-#include <unistd.h>
 
-#define NUM_ITERATIONS 5
+typedef struct {
+    int pid;
+    int arrival_time;
+    int burst_time;
+    int remaining_time;
+    int completion_time;
+    int turnaround_time;
+    int waiting_time;
+} Process;
 
-volatile bool flag[2] = {false, false};
-volatile int turn;
-
-void enter_critical_section(int process) {
-    int other = 1 - process;
-    flag[process] = true;
-    turn = other;
-    while (flag[other] && turn == other);
-}
-
-void exit_critical_section(int process) {
-    flag[process] = false;
-}
-
-void* process_function(void* arg) {
-    int process = *(int*)arg;
-    for (int i = 0; i < NUM_ITERATIONS; i++) {
-        enter_critical_section(process);
-        printf("Process %d is in the critical section (iteration %d)\n", process, i + 1);
-        usleep(100000); // Simulating some work in critical section
-        printf("Process %d is leaving the critical section (iteration %d)\n", process, i + 1);
-        exit_critical_section(process);
-        usleep(100000); // Simulating some work in non-critical section
+// Function to sort processes by Arrival Time
+void sortByArrivalTime(Process proc[], int n) {
+    for (int i = 0; i < n - 1; i++) {
+        for (int j = i + 1; j < n; j++) {
+            if (proc[i].arrival_time > proc[j].arrival_time) {
+                Process temp = proc[i];
+                proc[i] = proc[j];
+                proc[j] = temp;
+            }
+        }
     }
-    return NULL;
+}
+
+// Function for Longest Job First (LJF) Scheduling
+void LJF(Process proc[], int n) {
+    sortByArrivalTime(proc, n);
+    int time = 0, completed = 0;
+    int total_waiting_time = 0, total_turnaround_time = 0;
+
+    printf("\n--- Longest Job First (LJF) ---\n");
+    printf("PID\tArrival\tBurst\tCompletion\tTurnaround\tWaiting\n");
+
+    while (completed < n) {
+        int max_burst_idx = -1, max_burst_time = -1;
+
+        for (int i = 0; i < n; i++) {
+            if (proc[i].arrival_time <= time && proc[i].remaining_time > 0 && proc[i].remaining_time > max_burst_time) {
+                max_burst_time = proc[i].remaining_time;
+                max_burst_idx = i;
+            }
+        }
+
+        if (max_burst_idx == -1) {
+            time++;
+            continue;
+        }
+
+        Process *p = &proc[max_burst_idx];
+        time += p->remaining_time;
+        p->completion_time = time;
+        p->turnaround_time = p->completion_time - p->arrival_time;
+        p->waiting_time = p->turnaround_time - p->burst_time;
+        p->remaining_time = 0;
+        completed++;
+
+        total_waiting_time += p->waiting_time;
+        total_turnaround_time += p->turnaround_time;
+
+        printf("%d\t%d\t%d\t%d\t\t%d\t\t%d\n", p->pid, p->arrival_time, p->burst_time, p->completion_time, p->turnaround_time, p->waiting_time);
+    }
+
+    printf("\nTotal Waiting Time: %d", total_waiting_time);
+    printf("\nTotal Turnaround Time: %d", total_turnaround_time);
+    printf("\nAverage Waiting Time: %.2f", (float)total_waiting_time / n);
+    printf("\nAverage Turnaround Time: %.2f\n", (float)total_turnaround_time / n);
+}
+
+// Function for Shortest Remaining Job First (SRJF) Scheduling
+void SRJF(Process proc[], int n) {
+    sortByArrivalTime(proc, n);
+    int time = 0, completed = 0;
+    int total_waiting_time = 0, total_turnaround_time = 0;
+
+    printf("\n--- Shortest Remaining Job First (SRJF) ---\n");
+    printf("PID\tArrival\tBurst\tCompletion\tTurnaround\tWaiting\n");
+
+    while (completed < n) {
+        int min_remaining_idx = -1, min_remaining_time = 99999;
+
+        for (int i = 0; i < n; i++) {
+            if (proc[i].arrival_time <= time && proc[i].remaining_time > 0 && proc[i].remaining_time < min_remaining_time) {
+                min_remaining_time = proc[i].remaining_time;
+                min_remaining_idx = i;
+            }
+        }
+
+        if (min_remaining_idx == -1) {
+            time++;
+            continue;
+        }
+
+        Process *p = &proc[min_remaining_idx];
+
+        // Execute process for one time unit
+        p->remaining_time--;
+        time++;
+
+        // If process is completed
+        if (p->remaining_time == 0) {
+            p->completion_time = time;
+            p->turnaround_time = p->completion_time - p->arrival_time;
+            p->waiting_time = p->turnaround_time - p->burst_time;
+            completed++;
+
+            total_waiting_time += p->waiting_time;
+            total_turnaround_time += p->turnaround_time;
+
+            printf("%d\t%d\t%d\t%d\t\t%d\t\t%d\n", p->pid, p->arrival_time, p->burst_time, p->completion_time, p->turnaround_time, p->waiting_time);
+        }
+    }
+
+    printf("\nTotal Waiting Time: %d", total_waiting_time);
+    printf("\nTotal Turnaround Time: %d", total_turnaround_time);
+    printf("\nAverage Waiting Time: %.2f", (float)total_waiting_time / n);
+    printf("\nAverage Turnaround Time: %.2f\n", (float)total_turnaround_time / n);
 }
 
 int main() {
-    pthread_t t0, t1;
-    int p0 = 0, p1 = 1;
-    
-    pthread_create(&t0, NULL, process_function, &p0);
-    pthread_create(&t1, NULL, process_function, &p1);
-    
-    pthread_join(t0, NULL);
-    pthread_join(t1, NULL);
-    
+    int n, choice;
+
+    printf("Enter the number of processes: ");
+    scanf("%d", &n);
+
+    Process proc[n];
+
+    for (int i = 0; i < n; i++) {
+        proc[i].pid = i + 1;
+        printf("Enter Arrival Time and Burst Time for Process %d: ", i + 1);
+        scanf("%d %d", &proc[i].arrival_time, &proc[i].burst_time);
+        proc[i].remaining_time = proc[i].burst_time; // Initialize remaining burst time
+    }
+
+    printf("\nChoose Scheduling Algorithm:\n");
+    printf("1. Longest Job First (LJF)\n");
+    printf("2. Shortest Remaining Job First (SRJF)\n");
+    printf("Enter your choice: ");
+    scanf("%d", &choice);
+
+    if (choice == 1) {
+        LJF(proc, n);
+    } else if (choice == 2) {
+        SRJF(proc, n);
+    } else {
+        printf("Invalid choice!\n");
+    }
+
     return 0;
 }
